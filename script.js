@@ -1,25 +1,16 @@
 /* ========================================
-   CASAVERDE — Landing Page Script
+   CASAVERDE — Landing Page Script (Supabase Connected)
    ======================================== */
 
+// ========================================
+// CONFIGURAZIONE BACKEND
+// ========================================
+const API_URL = 'https://cadgobdxuqioaghstcry.supabase.co/functions/v1/receive-lead';
+
+// ========================================
+// FORM MULTI-STEP
+// ========================================
 let currentStep = 1;
-
-const servizio = 'efficienza_energetica';
-const fonte = 'casaverde.it';
-
-document.addEventListener('DOMContentLoaded', function() {
-    initForm();
-    initFaq();
-    initMobileMenu();
-    initSmoothScroll();
-    initNavbarScroll();
-});
-
-function initForm() {
-    const form = document.getElementById('leadForm');
-    if (!form) return;
-    form.addEventListener('submit', handleSubmit);
-}
 
 function nextStep(step) {
     if (!validateStep(currentStep)) return;
@@ -94,8 +85,12 @@ function isValidPhone(phone) {
     return /^[\+]?[\d\s\-\(\)]{8,20}$/.test(phone.replace(/\s/g, ''));
 }
 
-async function handleSubmit(e) {
+// ========================================
+// FORM SUBMISSION — BACKEND REALE
+// ========================================
+document.getElementById('leadForm').addEventListener('submit', async function(e) {
     e.preventDefault();
+
     if (!validateStep(currentStep)) return;
 
     const submitBtn = document.querySelector('.btn-submit');
@@ -106,7 +101,7 @@ async function handleSubmit(e) {
     btnLoader.classList.remove('hidden');
     submitBtn.disabled = true;
 
-    const formData = new FormData(e.target);
+    const formData = new FormData(this);
 
     // Collect checkbox values
     const interventi = [];
@@ -114,43 +109,57 @@ async function handleSubmit(e) {
         interventi.push(cb.value);
     });
 
+    // Mappa i campi del form ai nomi esatti delle colonne del database
     const leadData = {
-        servizio: servizio,
-        fonte: fonte,
-        dati_base: {
-            nome: formData.get('nome'),
-            cognome: formData.get('cognome'),
-            email: formData.get('email'),
-            telefono: formData.get('telefono'),
-            condizione_abitativa: formData.get('condizione_abitativa'),
-            urgenza: formData.get('urgenza'),
-            indirizzo: formData.get('indirizzo'),
-            privacy: formData.get('privacy') === 'on',
-            marketing: formData.get('marketing') === 'on'
-        },
-        dati_efficienza_energetica: {
-            tipologia_immobile: formData.get('tipologia_immobile'),
-            anno_costruzione: formData.get('anno_costruzione'),
-            mq: parseInt(formData.get('mq')) || null,
-            zona_climatica: formData.get('zona_climatica'),
-            isolamento_attuale: formData.get('isolamento_attuale'),
-            interventi: interventi,
-            budget: formData.get('budget'),
-            finanziamento: formData.get('finanziamento'),
-            note: formData.get('note') || null
-        },
-        timestamp: new Date().toISOString(),
+        servizio: 'efficienza_energetica',
+        fonte: 'casaverde.it',
+        nome: formData.get('nome'),
+        cognome: formData.get('cognome'),
+        email: formData.get('email'),
+        telefono: formData.get('telefono'),
+        condizione_abitativa: formData.get('condizione_abitativa') || null,
+        urgenza: formData.get('urgenza') || null,
+        indirizzo: formData.get('indirizzo') || null,
+        tipologia_immobile: formData.get('tipologia_immobile') || null,
+        anno_costruzione: formData.get('anno_costruzione') || null,
+        mq: parseInt(formData.get('mq')) || null,
+        zona_climatica: formData.get('zona_climatica') || null,
+        isolamento_attuale: formData.get('isolamento_attuale') || null,
+        interventi: interventi.length > 0 ? interventi : null,
+        budget: formData.get('budget') || null,
+        finanziamento: formData.get('finanziamento') || null,
+        note: formData.get('note') || null,
+        privacy: formData.get('privacy') === 'on',
+        marketing: formData.get('marketing') === 'on',
+        ip: null,
         user_agent: navigator.userAgent,
         referrer: document.referrer
     };
 
     try {
-        await simulateSubmit(leadData);
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(leadData)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Errore server: ' + response.status);
+        }
+
+        const result = await response.json();
+        console.log('Lead salvato:', result);
+
         document.getElementById('leadForm').classList.add('hidden');
         document.getElementById('successMessage').classList.remove('hidden');
+
         if (typeof gtag !== 'undefined') {
-            gtag('event', 'conversion', { event_category: 'lead', event_label: servizio });
+            gtag('event', 'conversion', { event_category: 'lead', event_label: 'efficienza_energetica' });
         }
+
     } catch (error) {
         console.error('Errore:', error);
         document.getElementById('errorText').textContent = 
@@ -162,22 +171,20 @@ async function handleSubmit(e) {
         btnLoader.classList.add('hidden');
         submitBtn.disabled = false;
     }
-}
-
-async function simulateSubmit(data) {
-    return new Promise(resolve => setTimeout(resolve, 1500));
-}
+});
 
 function resetForm() {
-    const form = document.getElementById('leadForm');
-    form.reset();
+    document.getElementById('leadForm').reset();
     currentStep = 1;
+
     document.querySelectorAll('.form-step').forEach((step, index) => {
         step.classList.toggle('hidden', index !== 0);
     });
+
     document.getElementById('successMessage').classList.add('hidden');
     document.getElementById('errorMessage').classList.add('hidden');
-    form.classList.remove('hidden');
+    document.getElementById('leadForm').classList.remove('hidden');
+
     document.querySelectorAll('input, select, textarea').forEach(field => {
         field.style.borderColor = '';
     });
@@ -186,57 +193,69 @@ function resetForm() {
     });
 }
 
-function initFaq() {
-    window.toggleFaq = toggleFaq;
-}
-
+// ========================================
+// FAQ ACCORDION
+// ========================================
 function toggleFaq(button) {
     const item = button.parentElement;
     const isActive = item.classList.contains('active');
+
     document.querySelectorAll('.faq-item').forEach(faq => {
         faq.classList.remove('active');
     });
+
     if (!isActive) {
         item.classList.add('active');
     }
 }
 
-function initMobileMenu() {
-    const btn = document.querySelector('.mobile-menu-btn');
-    const links = document.querySelector('.nav-links');
-    if (!btn || !links) return;
-    btn.addEventListener('click', () => {
-        links.classList.toggle('mobile-open');
+// ========================================
+// MOBILE MENU
+// ========================================
+const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
+const navLinks = document.querySelector('.nav-links');
+
+if (mobileMenuBtn && navLinks) {
+    mobileMenuBtn.addEventListener('click', () => {
+        navLinks.classList.toggle('mobile-open');
     });
 }
 
-function initSmoothScroll() {
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function(e) {
-            e.preventDefault();
-            const target = document.querySelector(this.getAttribute('href'));
-            if (target) {
-                const offset = 80;
-                const targetPosition = target.getBoundingClientRect().top + window.pageYOffset - offset;
-                window.scrollTo({ top: targetPosition, behavior: 'smooth' });
-            }
-        });
-    });
-}
-
-function initNavbarScroll() {
-    const navbar = document.querySelector('.navbar');
-    if (!navbar) return;
-    window.addEventListener('scroll', () => {
-        const currentScroll = window.pageYOffset;
-        if (currentScroll > 100) {
-            navbar.style.boxShadow = '0 4px 20px rgba(0,0,0,0.08)';
-        } else {
-            navbar.style.boxShadow = 'none';
+// ========================================
+// SMOOTH SCROLL
+// ========================================
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+            const offset = 80;
+            const targetPosition = target.getBoundingClientRect().top + window.pageYOffset - offset;
+            window.scrollTo({ top: targetPosition, behavior: 'smooth' });
         }
     });
-}
+});
 
+// ========================================
+// NAVBAR SCROLL
+// ========================================
+let lastScroll = 0;
+window.addEventListener('scroll', () => {
+    const navbar = document.querySelector('.navbar');
+    const currentScroll = window.pageYOffset;
+
+    if (currentScroll > 100) {
+        navbar.style.boxShadow = '0 4px 20px rgba(0,0,0,0.08)';
+    } else {
+        navbar.style.boxShadow = 'none';
+    }
+
+    lastScroll = currentScroll;
+});
+
+// ========================================
+// SHAKE ANIMATION
+// ========================================
 const shakeStyle = document.createElement('style');
 shakeStyle.textContent = `
     @keyframes shake {
@@ -249,4 +268,4 @@ shakeStyle.textContent = `
 `;
 document.head.appendChild(shakeStyle);
 
-console.log('✅ CasaVerde Landing Page — Caricata');
+console.log('✅ CasaVerde — Backend collegato');
